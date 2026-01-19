@@ -12,7 +12,7 @@ They can also just draw whatever they want with it.
 - Persistent drawing layer (strokes are not erased when pausing)
 - Optional white or camera-based background
 - Shape fitting and recognition:
-  - Circle (with accuracy score)
+  - Circle 
   - Triangle
   - Square / Rectangle
   - Pentagon, Hexagon, Polygon
