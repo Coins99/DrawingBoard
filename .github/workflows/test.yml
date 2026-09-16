@@ -20,6 +20,40 @@ jobs:
       - name: Recognition evaluation
         run: npm run evaluate
 
+  setup:
+    name: one-command setup
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.11
+      - name: Serve without installing anything
+        shell: bash
+        run: |
+          node scripts/serve.mjs --no-open --port 4173 &
+          SERVER=$!
+          for _ in $(seq 1 40); do
+            curl -sf http://127.0.0.1:4173/DrawingBoard/index.html >/dev/null && break
+            sleep 0.25
+          done
+          curl -sf http://127.0.0.1:4173/DrawingBoard/index.html | grep -q DrawingBoard
+          curl -sf http://127.0.0.1:4173/DrawingBoard/src/gestures.js >/dev/null
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4173/nope.js)" = 404
+          kill "$SERVER"
+      - name: Setup script help text
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cmd //c "setup.cmd --help"
+          else
+            ./setup.sh --help
+          fi
+
   browser:
     runs-on: ubuntu-latest
     steps:

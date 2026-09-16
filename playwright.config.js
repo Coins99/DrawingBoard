@@ -14,8 +14,10 @@ export default defineConfig({
     permissions:[],
   },
   projects:[{name:"chromium",use:{...devices["Desktop Chrome"],viewport:{width:1280,height:800}}}],
+  // The same dependency-free server the setup script uses, so tests and humans
+  // exercise one code path.
   webServer:{
-    command:"npx http-server . -p 4173 -c-1 --silent",
+    command:"node scripts/serve.mjs --no-open --port 4173",
     url:"http://127.0.0.1:4173/DrawingBoard/index.html",
     reuseExistingServer:!process.env.CI,
     timeout:30_000,
