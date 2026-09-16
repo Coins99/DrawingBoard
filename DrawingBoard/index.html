@@ -1,43 +1,99 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Finger Drawing Tracker with Thumb-Pinky Control</title>
-  <link rel="stylesheet" href="styles.css">
-  
-  <!-- MediaPipe Hands (global API) -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DrawingBoard — Gesture Diagram Editor</title><link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <h2>Finger Drawing Tracker</h2>
-
-  <div id="controls">
-    <div class="label-inline">
-      <label>White Canvas</label>
-      <label class="switch">
-        <input type="checkbox" id="whiteBgToggle">
-        <span class="slider"></span>
-      </label>
+  <header class="app-header">
+    <div><h1>DrawingBoard</h1><p>Sketch, recognize, connect, and edit diagrams with a pointer or your hand.</p></div>
+    <div class="document-actions" role="group" aria-label="Document actions">
+      <button id="newBtn">New</button><button id="openBtn">Open</button><button id="saveBtn">Save JSON</button>
+      <button id="svgBtn">Export SVG</button><button id="pngBtn">Export PNG</button>
+      <input id="fileInput" type="file" accept="application/json,.json,.diagram.json" hidden>
     </div>
-
-    <button id="startBtn">Start</button>
-    <button id="stopBtn">Stop & Score</button>
-    <button id="resetBtn">Reset</button>
-
-    <label class="label-inline">
-      <input id="debugToggle" type="checkbox" checked>
-      Debug
-    </label>
-
-    <span id="status"></span>
-  </div>
-
-  <video id="video" width="640" height="480" autoplay playsinline></video>
-  <canvas id="canvas" width="640" height="480"></canvas>
-  <div id="score">Score: N/A</div>
-
-  <script src="app.js"></script>
+  </header>
+  <main class="app-shell">
+    <aside class="tool-panel" aria-label="Drawing tools">
+      <h2 id="toolsHeading">Tools</h2>
+      <div id="toolButtons" class="tool-grid" role="group" aria-labelledby="toolsHeading">
+        <button data-tool="select" aria-pressed="true" aria-keyshortcuts="V" title="Select (V)">Select</button>
+        <button data-tool="freehand" aria-pressed="false" aria-keyshortcuts="P" title="Freehand (P)">Freehand</button>
+        <button data-tool="rectangle" aria-pressed="false" aria-keyshortcuts="R" title="Rectangle (R)">Rectangle</button>
+        <button data-tool="circle" aria-pressed="false" aria-keyshortcuts="O" title="Circle (O)">Circle</button>
+        <button data-tool="diamond" aria-pressed="false" aria-keyshortcuts="D" title="Diamond (D)">Diamond</button>
+        <button data-tool="connector" aria-pressed="false" aria-keyshortcuts="C" title="Connector (C)">Connector</button>
+      </div>
+      <h2 id="editHeading">Edit</h2>
+      <div class="button-row" role="group" aria-labelledby="editHeading">
+        <button id="undoBtn" disabled aria-keyshortcuts="Control+Z">Undo</button>
+        <button id="redoBtn" disabled aria-keyshortcuts="Shift+Control+Z">Redo</button>
+        <button id="duplicateBtn" disabled aria-keyshortcuts="Control+D">Duplicate</button>
+        <button id="deleteBtn" disabled aria-keyshortcuts="Delete">Delete</button>
+      </div>
+      <h2>Gesture control</h2>
+      <button id="cameraBtn" class="primary">Enable camera</button>
+      <label class="check-row"><input id="armToggle" type="checkbox" disabled> Arm gesture drawing</label>
+      <label class="check-row"><input id="mirrorToggle" type="checkbox" checked> Mirror camera</label>
+      <label class="check-row"><input id="debugToggle" type="checkbox"> Hand landmarks</label>
+      <label class="range-row" for="smoothing">Stability <input id="smoothing" type="range" min="15" max="100" value="45"></label>
+      <div id="gestureState" class="state-card" data-state="off"><span class="state-dot"></span><div><strong>Camera off</strong><small>Mouse editing is ready</small></div></div>
+      <div class="button-row">
+        <button id="calibrateBtn" disabled>Calibrate</button>
+        <button id="cornerBtn" disabled title="Record a reachable corner of your drawing area">Set corner</button>
+        <button id="resetCalibrationBtn" disabled>Reset</button>
+      </div>
+      <p id="calibrationState" class="hint">Using default gesture thresholds.</p>
+      <h2>Tutorial</h2>
+      <div class="button-row"><button id="tutorialBtn">Start tutorial</button><button id="tutorialSkip" hidden>Skip step</button></div>
+      <div id="tutorialCard" class="state-card" hidden><span class="state-dot"></span><div><strong id="tutorialTitle"></strong><small id="tutorialHint"></small></div></div>
+      <details><summary>Gesture guide</summary><ol><li>Enable the camera, then arm gesture drawing.</li><li>Touch thumb to pinky once to ready the pen.</li><li>Move your index fingertip to draw.</li><li>Touch thumb to pinky again to lift the pen.</li><li>In Select, dwell to highlight, then pinch to drag.</li></ol></details>
+    </aside>
+    <section class="workspace">
+      <div class="workspace-bar"><span id="toolLabel">Select tool</span><span id="saveState">Not saved yet</span><span id="zoomLabel">100%</span></div>
+      <div id="stage" class="stage" tabindex="0" role="group" aria-label="Diagram canvas" aria-describedby="stageHelp">
+        <svg id="diagram" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+          <defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,3.5 L0,7 z" fill="context-stroke"></path></marker></defs>
+          <g id="viewport"><g id="edges"></g><g id="strokes"></g><g id="nodes"></g><g id="guides"></g><g id="selection"></g><g id="handles"></g></g>
+        </svg>
+        <canvas id="overlay" aria-hidden="true"></canvas>
+        <div id="candidate" class="candidate" role="group" aria-label="Recognition proposal" hidden>
+          <span id="candidateText"></span>
+          <button id="acceptCandidate" class="primary">Accept</button>
+          <button id="altCandidate" hidden></button>
+          <button id="rejectCandidate">Keep stroke</button>
+        </div>
+      </div>
+      <p id="stageHelp" class="hint">Drag to draw. Arrow keys nudge the selection, Shift+arrows nudge further. Hold Space or use the middle button to pan. Scroll to zoom.</p>
+      <p id="status" class="status" role="status" aria-live="polite">Ready. Draw a shape or enable the camera.</p>
+      <h2 class="visually-hidden">Diagram contents</h2>
+      <ul id="objectList" class="visually-hidden" aria-live="polite"></ul>
+    </section>
+    <aside class="inspector" aria-label="Inspector">
+      <h2>Inspector</h2><div id="emptyInspector" class="empty-state">Select one shape or connector to edit it.</div>
+      <form id="inspectorForm" hidden>
+        <label id="labelField" for="labelInput">Label<textarea id="labelInput" rows="2" maxlength="500"></textarea></label>
+        <div id="nodeFields">
+          <label>X <input id="xInput" type="number" step="1"></label><label>Y <input id="yInput" type="number" step="1"></label>
+          <label>Width <input id="widthInput" type="number" min="8" step="1"></label><label>Height <input id="heightInput" type="number" min="8" step="1"></label>
+        </div>
+        <label id="routingField" hidden>Routing <select id="routingInput"><option value="straight">Straight</option><option value="orthogonal">Orthogonal</option></select></label>
+        <label>Stroke <input id="strokeInput" type="color" value="#334155"></label>
+        <label id="fillField">Fill <input id="fillInput" type="color" value="#ffffff"></label>
+        <button class="primary">Apply</button>
+      </form>
+      <h2>View</h2>
+      <label class="check-row"><input id="gridToggle" type="checkbox" checked> Snap to grid</label>
+      <label class="check-row"><input id="guideToggle" type="checkbox" checked> Alignment guides</label>
+      <div class="button-row" role="group" aria-label="Zoom"><button id="zoomOut" aria-label="Zoom out">−</button><button id="zoomReset">100%</button><button id="zoomIn" aria-label="Zoom in">+</button></div>
+      <h2>Export options</h2>
+      <label>PNG scale <select id="pngScale"><option value="1">1×</option><option value="2" selected>2×</option></select></label>
+      <label class="check-row"><input id="pngTransparent" type="checkbox"> Transparent PNG background</label>
+      <h2>Camera preview</h2><div class="camera-preview"><video id="video" autoplay muted playsinline></video><span id="cameraPlaceholder">Camera off</span></div>
+    </aside>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1620248257/drawing_utils.js" crossorigin="anonymous"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
