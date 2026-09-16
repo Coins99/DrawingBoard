@@ -41,7 +41,7 @@ jobs:
             curl -sf http://127.0.0.1:4173/DrawingBoard/index.html >/dev/null && break
             sleep 0.25
           done
-          curl -sf http://127.0.0.1:4173/DrawingBoard/index.html | grep -q DrawingBoard
+          curl -sf http://127.0.0.1:4173/DrawingBoard/index.html | grep DrawingBoard >/dev/null
           curl -sf http://127.0.0.1:4173/DrawingBoard/src/gestures.js >/dev/null
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4173/nope.js)" = 404
           kill "$SERVER"
