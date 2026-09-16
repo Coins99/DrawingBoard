@@ -7,14 +7,15 @@
     "node": ">=20.11"
   },
   "scripts": {
-    "dev": "http-server . -p 4173 -c-1",
+    "start": "node scripts/serve.mjs",
+    "dev": "node scripts/serve.mjs --no-open",
+    "setup": "node scripts/serve.mjs",
     "test": "node --test tests/unit/*.test.js",
     "test:e2e": "playwright test",
     "evaluate": "node scripts/evaluate-recognition.js"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
-    "http-server": "14.1.1",
     "prettier": "3.9.6"
   }
 }
