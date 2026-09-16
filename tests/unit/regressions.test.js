@@ -1,7 +1,9 @@
 // Regression tests for defects found in review. Each one failed before its fix.
 import{test}from"node:test";
 import assert from"node:assert/strict";
-import{Autosave}from"../../DrawingBoard/src/autosave.js";
+import{Autosave,withFallback}from"../../DrawingBoard/src/autosave.js";
+import{CameraController}from"../../DrawingBoard/src/camera.js";
+import{MAX_PNG_PIXELS,MAX_PNG_SIDE,pngTargetSize}from"../../DrawingBoard/src/io.js";
 import{createDocument,defaultStyle,validateDocument}from"../../DrawingBoard/src/document.js";
 import{HANDLES,resizeBounds}from"../../DrawingBoard/src/geometry.js";
 
@@ -82,4 +84,56 @@ test("a write after clear still lands",async()=>{
   autosave.schedule({...createDocument("Second"),nodes:[rect()]},2);
   await autosave.flush();
   assert.equal((await autosave.load()).document.title,"Second");
+});
+
+test("an oversized export is scaled below one tenth rather than clamped",()=>{
+  // Coordinates run to +/-1e6, so a valid diagram can be millions of units wide.
+  // A 0.1 floor on the scale factor produced a canvas the browser refused to draw.
+  const{width,height,applied}=pngTargetSize(2_000_000,1200,2);
+  assert.ok(applied<.1,`factor was not reduced: ${applied}`);
+  assert.ok(width<=MAX_PNG_SIDE&&height<=MAX_PNG_SIDE,`${width}x${height} exceeds the side cap`);
+  assert.ok(width*height<=MAX_PNG_PIXELS);
+  assert.ok(width>=1&&height>=1);
+  // Ordinary diagrams still get the requested factor.
+  assert.equal(pngTargetSize(800,600,2).applied,2);
+});
+
+test("a backend that fails asynchronously falls back to the secondary",async()=>{
+  // indexedDB.open() rejects long after pickBackend() returned, so the synchronous
+  // try around the constructor never saw the failure and recovery was lost entirely.
+  const failing={name:"indexeddb",put:async()=>{throw new Error("storage blocked")},
+    get:async()=>{throw new Error("storage blocked")},remove:async()=>{throw new Error("storage blocked")}};
+  let record;
+  const secondary={name:"localstorage",put:async value=>{record=value},get:async()=>record,remove:async()=>{record=undefined}};
+  const backend=withFallback(failing,secondary);
+  const autosave=new Autosave({backend,debounce:0});
+  autosave.schedule({...createDocument("Recovered"),nodes:[rect()]},1);
+  await autosave.flush();
+  assert.equal(autosave.available,true);
+  assert.equal(backend.name,"localstorage");
+  assert.equal((await autosave.load()).document.title,"Recovered");
+});
+
+test("the camera stream is released when the model fails to load",async()=>{
+  const stopped=[];
+  const track={kind:"video",stop(){stopped.push(this)},addEventListener(){}};
+  const stream={getTracks:()=>[track],getVideoTracks:()=>[track]};
+  const globals={navigator:{mediaDevices:{getUserMedia:async()=>stream}},window:{},
+    requestAnimationFrame:()=>0,cancelAnimationFrame:()=>{}};
+  const saved=new Map();
+  for(const[key,value]of Object.entries(globals)){
+    saved.set(key,Object.getOwnPropertyDescriptor(globalThis,key));
+    Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});
+  }
+  try{
+    // window.Hands is missing, as when the CDN is blocked. The controller used to
+    // throw before storing the stream, so stop() had no tracks and the camera
+    // stayed live while the UI reported it as unavailable.
+    const camera=new CameraController({srcObject:null,play:async()=>{},readyState:0},()=>{},()=>{});
+    await assert.rejects(camera.start(),/hand-tracking model/);
+    assert.equal(stopped.length,1);
+    assert.equal(camera.stream,null);
+  }finally{
+    for(const[key,descriptor]of saved)descriptor?Object.defineProperty(globalThis,key,descriptor):delete globalThis[key];
+  }
 });

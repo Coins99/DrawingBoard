@@ -48,10 +48,34 @@ export function createMemoryBackend(){
   return{name:"memory",put:async value=>{record=value},get:async()=>record,remove:async()=>{record=undefined}};
 }
 
+// IndexedDB reports most of its failures asynchronously: open() rejects long after
+// the backend was chosen, so a synchronous try around the constructor never sees it.
+// The first rejected operation demotes us to the secondary backend and retries there.
+export function withFallback(primary,secondary){
+  if(!primary)return secondary;
+  if(!secondary)return primary;
+  let active=primary;
+  const call=async(op,...args)=>{
+    try{return await active[op](...args)}
+    catch(error){
+      if(active!==primary)throw error;
+      active=secondary;
+      return active[op](...args);
+    }
+  };
+  return{
+    get name(){return active.name},
+    put:record=>call("put",record),
+    get:()=>call("get"),
+    remove:()=>call("remove"),
+  };
+}
+
 export function pickBackend(){
-  try{const idb=indexedDbBackend();if(idb)return idb}catch{/* fall through */}
-  try{const local=localStorageBackend();if(local)return local}catch{/* fall through */}
-  return null;
+  let idb=null,local=null;
+  try{idb=indexedDbBackend()}catch{/* fall through */}
+  try{local=localStorageBackend()}catch{/* fall through */}
+  return withFallback(idb,local)||null;
 }
 
 export class Autosave{

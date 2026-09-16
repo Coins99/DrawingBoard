@@ -31,6 +31,16 @@ export function exportSvg(doc){
   download(new Blob([standaloneSvg(doc)],{type:"image/svg+xml"}),`${safeName(doc.title)}.svg`);
 }
 
+// Pick the raster size that stays inside both caps. There is no lower bound on the
+// factor: a widely spread diagram needs an arbitrarily small one, and a floor here
+// used to produce a canvas far past MAX_PNG_SIDE that the browser then refused.
+export function pngTargetSize(rawWidth,rawHeight,scale=2){
+  const baseWidth=Math.max(1,rawWidth||1),baseHeight=Math.max(1,rawHeight||1);
+  const limit=Math.min(scale,MAX_PNG_SIDE/baseWidth,MAX_PNG_SIDE/baseHeight,Math.sqrt(MAX_PNG_PIXELS/(baseWidth*baseHeight)));
+  const applied=Number.isFinite(limit)&&limit>0?limit:1;
+  return{applied,width:Math.max(1,Math.floor(baseWidth*applied)),height:Math.max(1,Math.floor(baseHeight*applied))};
+}
+
 // Rasterize the exported SVG. Oversized output is scaled down rather than refused.
 export async function exportPng(doc,{scale=2,background="#ffffff"}={}){
   const markup=standaloneSvg(doc);
@@ -42,10 +52,7 @@ export async function exportPng(doc,{scale=2,background="#ffffff"}={}){
       image.onerror=()=>reject(new Error("Could not rasterize the diagram."));
       image.src=url;
     });
-    const baseWidth=Math.max(1,image.naturalWidth||image.width),baseHeight=Math.max(1,image.naturalHeight||image.height);
-    const limit=Math.min(scale,MAX_PNG_SIDE/baseWidth,MAX_PNG_SIDE/baseHeight,Math.sqrt(MAX_PNG_PIXELS/(baseWidth*baseHeight)));
-    const applied=Math.max(.1,limit);
-    const width=Math.max(1,Math.floor(baseWidth*applied)),height=Math.max(1,Math.floor(baseHeight*applied));
+    const{width,height,applied}=pngTargetSize(image.naturalWidth||image.width,image.naturalHeight||image.height,scale);
     const canvas=document.createElement("canvas");
     canvas.width=width;canvas.height=height;
     const ctx=canvas.getContext("2d");

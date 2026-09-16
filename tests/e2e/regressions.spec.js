@@ -145,3 +145,37 @@ test("a circle shrinks when its east handle is dragged inward",async({page})=>{
   expect(after.width).toBeLessThan(before.width-40);
   expect(after.width).toBe(after.height);
 });
+
+test("a freehand stroke is not offered a label it cannot keep",async({page})=>{
+  // Strokes carry no label in the schema, so validation dropped whatever was typed
+  // and Apply silently did nothing. The control is no longer offered for them.
+  await page.click('[data-tool="freehand"]');
+  await dragOnStage(page,{x:120,y:120},{x:260,y:230});
+  await page.click('[data-tool="select"]');
+  await dragOnStage(page,{x:80,y:80},{x:320,y:280});
+  const selection=await page.evaluate(()=>[...window.drawingBoard.selection]);
+  expect(selection).toHaveLength(1);
+  await expect(page.locator("#inspectorForm")).toBeVisible();
+  await expect(page.locator("#labelField")).toBeHidden();
+  // A node still gets one.
+  await drawNode(page,"rectangle",{x:400,y:120},{x:500,y:200});
+  await expect(page.locator("#labelField")).toBeVisible();
+});
+
+test("an accepted input region can be reset without a threshold calibration",async({page})=>{
+  // Corner capture used to copy only the region fields, so calibrated stayed false
+  // and Reset stayed disabled: the restricted area was stuck for the session.
+  await expect(page.locator("#resetCalibrationBtn")).toBeDisabled();
+  // No camera is available in these tests, so Set corner is enabled directly;
+  // the handler under test is the same one a ready camera would unlock.
+  await page.evaluate(()=>{document.getElementById("cornerBtn").disabled=false});
+  await page.evaluate(()=>{window.drawingBoard.session.lastLandmark={x:.2,y:.25}});
+  await page.click("#cornerBtn");
+  await page.evaluate(()=>{window.drawingBoard.session.lastLandmark={x:.8,y:.75}});
+  await page.click("#cornerBtn");
+  expect(await page.evaluate(()=>window.drawingBoard.session.calibration.regionAccepted)).toBe(true);
+  await expect(page.locator("#resetCalibrationBtn")).toBeEnabled();
+  await page.click("#resetCalibrationBtn");
+  expect(await page.evaluate(()=>window.drawingBoard.session.calibration.regionAccepted)).toBeFalsy();
+  await expect(page.locator("#resetCalibrationBtn")).toBeDisabled();
+});

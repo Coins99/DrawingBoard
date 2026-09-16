@@ -75,6 +75,8 @@ function renderInspector(){
   $("emptyInspector").hidden=!!object;$("inspectorForm").hidden=!object;
   if(!object){inspectorTarget=null;return}
   const isNode="width"in object,isEdge=!!object.from;
+  // Strokes carry no label in the schema, so the control is not offered for them.
+  $("labelField").hidden=!isNode&&!isEdge;
   $("nodeFields").hidden=!isNode;
   $("fillField").hidden=!isNode;
   $("routingField").hidden=!isEdge;
@@ -505,7 +507,7 @@ $("inspectorForm").onsubmit=event=>{
   const routing=$("routingInput").value;
   const bounds=isNode?{x:Number($("xInput").value),y:Number($("yInput").value),width:Number($("widthInput").value),height:Number($("heightInput").value)}:null;
   const applied=commit("Update object",doc=>{
-    setLabel(doc,id,label);
+    if(isNode||isEdge)setLabel(doc,id,label);
     setStyle(doc,id,isNode?{stroke,fill}:{stroke});
     if(bounds&&Number.isFinite(bounds.x)&&Number.isFinite(bounds.y)&&Number.isFinite(bounds.width)&&Number.isFinite(bounds.height))setBounds(doc,id,bounds);
     if(isEdge)doc.edges.find(e=>e.id===id).routing=routing;
@@ -699,7 +701,10 @@ $("cornerBtn").onclick=()=>{
   const count=calibrator.captureCorner(session.lastLandmark);
   if(count<2){setStatus("First corner recorded. Move to the opposite corner and press Set corner again.");return}
   const result=calibrator.finish();
-  session.calibration={...session.calibration,region:result.region,regionAccepted:result.regionAccepted};
+  // An accepted region counts as calibration on its own, so carry the flag and
+  // enable Reset; otherwise the region could never be cleared from the UI.
+  session.calibration={...session.calibration,region:result.region,regionAccepted:result.regionAccepted,calibrated:session.calibration.calibrated||result.regionAccepted};
+  $("resetCalibrationBtn").disabled=!session.calibration.calibrated;
   renderCalibration();
   setStatus(result.regionAccepted?"Input area set for this session.":"Those corners are too close together, so the full camera area is kept.");
 };
