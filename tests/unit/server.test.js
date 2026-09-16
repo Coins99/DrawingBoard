@@ -39,13 +39,13 @@ test("static server serves the editor without exposing repository files",{timeou
 
   try{
     await ready;
-    for(const path of["/","/DrawingBoard/index.html","/DrawingBoard/app.js"]){
+    for(const path of["/","/DrawingBoard/index.html","/DrawingBoard/app.js","/DrawingBoard/src/gestures.js"]){
       const response=await fetch(`http://127.0.0.1:${port}${path}`);
       assert.equal(response.status,200,path);
     }
-    for(const path of["/.git/HEAD","/package.json","/README.md","/DrawingBoard/%2e%2e/package.json"]){
+    for(const path of["/.git/HEAD","/package.json","/README.md","/DrawingBoard/%2e%2e/package.json","/nope.js"]){
       const response=await fetch(`http://127.0.0.1:${port}${path}`);
-      assert.notEqual(response.status,200,path);
+      assert.equal(response.status,404,path);
     }
   }finally{
     if(server.exitCode===null){

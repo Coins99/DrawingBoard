@@ -86,7 +86,7 @@ function send(response,status,body,headers={}){
 const server=createServer((request,response)=>{
   if(request.method!=="GET"&&request.method!=="HEAD")return send(response,405,"Method not allowed.",{allow:"GET, HEAD"});
   const target=resolveRequest(request.url||"/");
-  if(!target)return send(response,400,"Bad request.");
+  if(!target)return send(response,404,`Not found: ${request.url}`);
 
   const file=publicFile(target);
   if(!file)return send(response,404,`Not found: ${request.url}`);
