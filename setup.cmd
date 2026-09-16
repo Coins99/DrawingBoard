@@ -69,6 +69,10 @@ if defined DEV (
   )
   echo ==^> Installing the Chromium build used by the browser tests
   call npx playwright install chromium
+  if errorlevel 1 (
+    echo     Chromium installation failed. Browser tests are not ready.
+    goto fail
+  )
   echo     Run "npm test" and "npm run test:e2e" when you want the suites.
 )
 

@@ -3,12 +3,14 @@
 // editor: this file only uses the Node standard library. `npm install` is needed
 // only for the test suites.
 import{createServer}from"node:http";
-import{createReadStream,statSync}from"node:fs";
+import{createReadStream,realpathSync,statSync}from"node:fs";
 import{spawn}from"node:child_process";
 import{extname,join,normalize,resolve,sep}from"node:path";
 import{fileURLToPath}from"node:url";
 
 const ROOT=resolve(fileURLToPath(import.meta.url),"..","..");
+const PUBLIC_ROOT=join(ROOT,"DrawingBoard");
+const REAL_PUBLIC_ROOT=realpathSync(PUBLIC_ROOT);
 const ENTRY="/DrawingBoard/index.html";
 const DEFAULT_PORT=4173;
 const PORT_ATTEMPTS=10;
@@ -54,15 +56,26 @@ function parseArgs(argv){
   return options;
 }
 
-// Resolves a request path to a file inside ROOT, or null if it escapes.
+function inside(target,root){return target===root||target.startsWith(root+sep)}
+
+// Only files in the editor's public directory may be served.
 function resolveRequest(urlPath){
   let decoded;
   try{decoded=decodeURIComponent(urlPath.split("?")[0].split("#")[0])}catch{return null}
   if(decoded.includes("\0"))return null;
   if(decoded==="/"||decoded==="")decoded=ENTRY;
+  if(decoded.split(/[\\/]/).some(segment=>segment.startsWith(".")))return null;
   const target=resolve(join(ROOT,normalize(decoded)));
-  if(target!==ROOT&&!target.startsWith(ROOT+sep))return null;
+  if(!inside(target,PUBLIC_ROOT))return null;
   return target;
+}
+
+function publicFile(target){
+  try{
+    const candidate=statSync(target).isDirectory()?join(target,"index.html"):target;
+    const file=realpathSync(candidate);
+    return inside(file,REAL_PUBLIC_ROOT)&&statSync(file).isFile()?file:null;
+  }catch{return null}
 }
 
 function send(response,status,body,headers={}){
@@ -75,14 +88,9 @@ const server=createServer((request,response)=>{
   const target=resolveRequest(request.url||"/");
   if(!target)return send(response,400,"Bad request.");
 
-  let stats;
-  try{stats=statSync(target)}catch{return send(response,404,`Not found: ${request.url}`)}
-  if(stats.isDirectory()){
-    const index=join(target,"index.html");
-    try{statSync(index)}catch{return send(response,404,`Not found: ${request.url}`)}
-    return stream(response,index,request.method);
-  }
-  return stream(response,target,request.method);
+  const file=publicFile(target);
+  if(!file)return send(response,404,`Not found: ${request.url}`);
+  return stream(response,file,request.method);
 });
 
 function stream(response,file,method){
