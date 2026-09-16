@@ -97,8 +97,8 @@ Files carry `schemaVersion: 1` and three collections: `nodes`, `strokes` and `ed
 ## Testing
 
 ```
-npm test          # 171 unit tests for the pure modules
-npm run test:e2e  # 22 Chromium tests for the editor and gesture replay
+npm test          # 178 unit tests for the pure modules
+npm run test:e2e  # 30 Chromium tests for the editor and gesture replay
 npm run evaluate  # recognition confusion matrix and metrics
 ```
 

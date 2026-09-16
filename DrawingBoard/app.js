@@ -69,21 +69,28 @@ function guideExtent(doc){
   return{minX:Math.min(...boxes.map(b=>b.x))-40,maxX:Math.max(...boxes.map(b=>b.x+b.width))+40,minY:Math.min(...boxes.map(b=>b.y))-40,maxY:Math.max(...boxes.map(b=>b.y+b.height))+40};
 }
 
+let inspectorTarget=null,inspectorDirty=false;
 function renderInspector(){
   const object=selection.size===1?findAny(store.doc,[...selection][0]):null;
   $("emptyInspector").hidden=!!object;$("inspectorForm").hidden=!object;
-  if(!object)return;
+  if(!object){inspectorTarget=null;return}
   const isNode="width"in object,isEdge=!!object.from;
-  $("labelInput").value=object.label||"";
-  $("strokeInput").value=object.style.stroke;
   $("nodeFields").hidden=!isNode;
   $("fillField").hidden=!isNode;
   $("routingField").hidden=!isEdge;
+  if(isNode)$("heightInput").disabled=object.kind==="circle";
+  // Keep unapplied edits. They are discarded only by Apply or by selecting
+  // something else, so an unrelated repaint cannot wipe what was typed.
+  const keepEdits=inspectorTarget===object.id&&inspectorDirty;
+  if(inspectorTarget!==object.id)inspectorDirty=false;
+  inspectorTarget=object.id;
+  if(keepEdits)return;
+  $("labelInput").value=object.label||"";
+  $("strokeInput").value=object.style.stroke;
   if(isNode){
     $("fillInput").value=object.style.fill==="none"?"#ffffff":object.style.fill;
     $("xInput").value=Math.round(object.x);$("yInput").value=Math.round(object.y);
     $("widthInput").value=Math.round(object.width);$("heightInput").value=Math.round(object.height);
-    $("heightInput").disabled=object.kind==="circle";
   }
   if(isEdge)$("routingInput").value=object.routing;
 }
@@ -115,9 +122,25 @@ function setTool(tool){
 
 function setSelection(ids=[]){selection.clear();for(const id of ids)selection.add(id);render()}
 
+// Single commit path. A rejected or empty mutation still repaints, so a draft or
+// preview is never left on screen, and a validation failure reaches the user.
+function commit(label,mutate){
+  try{
+    if(store.execute(label,mutate))return true;
+  }catch(error){
+    setStatus(`Change rejected: ${error.message}`);
+  }
+  render();
+  return false;
+}
+
 store.subscribe((doc,self)=>{
   session.dirty=true;session.saved=false;
   autosave.schedule(doc,self.revision);
+  // Drop any drag or resize preview: it was built from the previous document, so
+  // rendering it would show objects that no longer exist, and committing it would
+  // apply a delta measured against a state that is gone.
+  if(session.interaction?.base){session.interaction=null;session.activeGuides=[]}
   // Drop selections that no longer exist, for example after undoing an insert.
   for(const id of[...selection])if(!findAny(doc,id))selection.delete(id);
   if(session.candidate&&session.candidate.revision!==self.revision)dismissCandidate();
@@ -212,15 +235,16 @@ function end(point,time=performance.now()){
     if(!action.moved){render();return}
     const{dx,dy}=action.delta;
     const ids=[...selection];
-    store.execute("Move selection",doc=>moveSelection(doc,ids,dx,dy));
-    breakContinuity();tutorial.report("moved")&&renderTutorial();
+    const moved=commit("Move selection",doc=>moveSelection(doc,ids,dx,dy));
+    breakContinuity();
+    if(moved)tutorial.report("moved")&&renderTutorial();
     return;
   }
   if(action.kind==="resize"){
     const bounds=action.preview.nodes.find(n=>n.id===action.id);
     if(!bounds){render();return}
     const target={x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height};
-    store.execute("Resize shape",doc=>setBounds(doc,action.id,target));
+    commit("Resize shape",doc=>setBounds(doc,action.id,target));
     breakContinuity();return;
   }
   if(action.kind==="marquee"){
@@ -237,14 +261,15 @@ function end(point,time=performance.now()){
     const to=target?{type:"port",nodeId:target.nodeId,port:target.port}:{type:"point",x:action.current.x,y:action.current.y};
     if(action.start.type==="port"&&to.type==="port"&&action.start.nodeId===to.nodeId){setStatus("A connector must end on a different shape.");render();return}
     if(Math.hypot(action.current.x-action.startPoint.x,action.current.y-action.startPoint.y)<tolerance(8)){render();return}
-    store.execute("Add connector",doc=>addEdge(doc,{id:uid("edge"),from:action.start,to,routing:"straight",label:"",style:defaultStyle()}));
-    breakContinuity();tutorial.report("edgeAdded")&&renderTutorial();
+    const added=commit("Add connector",doc=>addEdge(doc,{id:uid("edge"),from:action.start,to,routing:"straight",label:"",style:defaultStyle()}));
+    breakContinuity();
+    if(added)tutorial.report("edgeAdded")&&renderTutorial();
     return;
   }
   if(action.kind==="freehand"){
     if(action.points.length<2){render();return}
     const id=uid("stroke"),points=action.points.map(p=>({...p}));
-    store.execute("Add stroke",doc=>addStroke(doc,{id,points,style:{...defaultStyle(),fill:"none"}}));
+    if(!commit("Add stroke",doc=>addStroke(doc,{id,points,style:{...defaultStyle(),fill:"none"}})))return;
     tutorial.report("strokeAdded")&&renderTutorial();
     // startedAt and endedAt share one clock per input source, which is what
     // arrow pairing compares against its grouping window.
@@ -258,8 +283,9 @@ function end(point,time=performance.now()){
     let x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),w=width,h=height;
     if(action.kind==="circle"){w=h=Math.max(width,height);x=b.x<a.x?a.x-w:a.x;y=b.y<a.y?a.y-h:a.y}
     const node={id:uid("node"),kind:action.kind,x,y,width:w,height:h,label:"",style:defaultStyle()};
-    store.execute(`Add ${action.kind}`,doc=>addNode(doc,node));
-    breakContinuity();setSelection([node.id]);
+    const added=commit(`Add ${action.kind}`,doc=>addNode(doc,node));
+    breakContinuity();
+    if(added)setSelection([node.id]);
   }
 }
 
@@ -332,15 +358,16 @@ function rejectCandidate({silent=false}={}){
 function removeSelection(){
   if(!selection.size)return;
   const ids=[...selection];
-  store.execute("Delete selection",doc=>deleteFrom(doc,ids));
-  breakContinuity();setSelection([]);
+  const removed=commit("Delete selection",doc=>deleteFrom(doc,ids));
+  breakContinuity();
+  if(removed)setSelection([]);
 }
 
 function duplicate(){
   if(!selection.size)return;
   const ids=[...selection];
   let created=[];
-  store.execute("Duplicate selection",doc=>{created=duplicateSelection(doc,ids)});
+  commit("Duplicate selection",doc=>{created=duplicateSelection(doc,ids)});
   breakContinuity();
   if(created.length){setSelection(created);setStatus(`Duplicated ${created.length} object${created.length===1?"":"s"}.`)}
 }
@@ -351,7 +378,9 @@ function nudge(dx,dy){
   const coalesce=now-session.lastNudgeAt<600;
   session.lastNudgeAt=now;
   const apply=doc=>moveSelection(doc,ids,dx,dy);
-  coalesce?store.amend("Nudge selection",apply):store.execute("Nudge selection",apply);
+  try{coalesce?store.amend("Nudge selection",apply):store.execute("Nudge selection",apply)}
+  catch(error){setStatus(`Nudge rejected: ${error.message}`);render()}
+  breakContinuity();
 }
 
 /* ---------- overlay ---------- */
@@ -475,17 +504,18 @@ $("inspectorForm").onsubmit=event=>{
   const label=$("labelInput").value,stroke=$("strokeInput").value,fill=$("fillInput").value;
   const routing=$("routingInput").value;
   const bounds=isNode?{x:Number($("xInput").value),y:Number($("yInput").value),width:Number($("widthInput").value),height:Number($("heightInput").value)}:null;
-  try{
-    store.execute("Update object",doc=>{
-      setLabel(doc,id,label);
-      setStyle(doc,id,isNode?{stroke,fill}:{stroke});
-      if(bounds&&Number.isFinite(bounds.x)&&Number.isFinite(bounds.y)&&Number.isFinite(bounds.width)&&Number.isFinite(bounds.height))setBounds(doc,id,bounds);
-      if(isEdge)doc.edges.find(e=>e.id===id).routing=routing;
-    });
-    breakContinuity();setStatus("Applied inspector changes.");
-  }catch(error){setStatus(`Change rejected: ${error.message}`);render()}
+  const applied=commit("Update object",doc=>{
+    setLabel(doc,id,label);
+    setStyle(doc,id,isNode?{stroke,fill}:{stroke});
+    if(bounds&&Number.isFinite(bounds.x)&&Number.isFinite(bounds.y)&&Number.isFinite(bounds.width)&&Number.isFinite(bounds.height))setBounds(doc,id,bounds);
+    if(isEdge)doc.edges.find(e=>e.id===id).routing=routing;
+  });
+  breakContinuity();
+  inspectorDirty=false;
+  if(applied)setStatus("Applied inspector changes.");
 };
 
+$("inspectorForm").addEventListener("input",()=>{inspectorDirty=true});
 $("gridToggle").onchange=event=>{session.grid=event.target.checked};
 $("guideToggle").onchange=event=>{session.guides=event.target.checked;session.activeGuides=[];render()};
 const setZoom=value=>{
@@ -503,11 +533,13 @@ const typing=target=>/^(input|textarea|select)$/i.test(target?.tagName)||target?
 document.addEventListener("keydown",event=>{
   if(typing(event.target))return;
   if(event.key===" "&&!session.spaceDown){session.spaceDown=true;stage.classList.add("panning");if(event.target===stage)event.preventDefault();return}
+  // A visible proposal suspends every other shortcut. Enter on a focused panel
+  // button is left to the browser so the button activates itself exactly once.
   if(session.candidate){
-    // The buttons handle their own activation; only bare key presses land here.
-    const onButton=event.target?.closest?.("#candidate");
-    if(event.key==="Enter"&&!onButton){event.preventDefault();acceptCandidate();return}
-    if(event.key==="Escape"){event.preventDefault();rejectCandidate();return}
+    const onPanel=!!event.target?.closest?.("#candidate");
+    if(event.key==="Enter"&&!onPanel){event.preventDefault();acceptCandidate()}
+    else if(event.key==="Escape"){event.preventDefault();rejectCandidate()}
+    return;
   }
   const modifier=event.ctrlKey||event.metaKey;
   if(modifier&&event.key.toLowerCase()==="z"){event.preventDefault();breakContinuity();event.shiftKey?store.redo():store.undo();return}
@@ -615,8 +647,9 @@ function renderCalibration(){
 function startCalibration(){
   if(!camera.running){setStatus("Enable the camera before calibrating.");return}
   calibrator.reset();
+  // Keep the previous calibration so cancelling really does keep it.
+  session.calibrating={queue:CALIBRATION_PHASES.slice(),prompt:"",started:false,previous:session.calibration};
   session.calibration=defaultCalibration();
-  session.calibrating={queue:CALIBRATION_PHASES.slice(),prompt:"",started:false};
   $("calibrateBtn").textContent="Cancel";
   nextCalibrationPhase(performance.now());
 }
@@ -643,7 +676,7 @@ function finishCalibration(){
   session.calibration={...result,region:result.region};
   session.calibrating=null;
   $("calibrateBtn").textContent="Calibrate";
-  $("resetCalibrationBtn").disabled=false;
+  $("resetCalibrationBtn").disabled=!result.calibrated;
   renderCalibration();
   const notes=[result.pause.accepted?null:result.pause.reason,result.pinch.accepted?null:result.pinch.reason].filter(Boolean);
   setStatus(notes.length?`Calibration kept defaults. ${notes[0]}`:"Calibration applied for this session.");
@@ -651,7 +684,14 @@ function finishCalibration(){
 }
 
 $("calibrateBtn").onclick=()=>{
-  if(session.calibrating){session.calibrating=null;$("calibrateBtn").textContent="Calibrate";renderCalibration();setStatus("Calibration cancelled. Previous thresholds kept.");return}
+  if(session.calibrating){
+    session.calibration=session.calibrating.previous||defaultCalibration();
+    session.calibrating=null;
+    $("calibrateBtn").textContent="Calibrate";
+    $("resetCalibrationBtn").disabled=!session.calibration.calibrated;
+    renderCalibration();setStatus("Calibration cancelled. Previous thresholds kept.");
+    return;
+  }
   startCalibration();
 };
 $("cornerBtn").onclick=()=>{

@@ -14,5 +14,7 @@
 .stage.panning{cursor:grab}
 .inspector textarea{width:100%;min-width:0;padding:7px;border:1px solid var(--border);border-radius:7px;color:#223046;font:inherit;resize:vertical}
 .inspector select{width:100%;padding:7px;border:1px solid var(--border);border-radius:7px;background:#fff;color:#223046}
-#tutorialCard[hidden],#tutorialSkip[hidden],#altCandidate[hidden]{display:none}
+/* Author display rules beat the user-agent [hidden] rule, so several panels stayed
+   visible while marked hidden. One global rule covers every current and future case. */
+[hidden]{display:none!important}
 #tutorialCard .state-dot{background:#2563eb}

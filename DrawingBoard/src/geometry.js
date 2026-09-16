@@ -118,7 +118,13 @@ export function resizeBounds(node,handle,delta,{keepSquare=node.kind==="circle",
   if(handle.includes("e"))width=Math.max(minimum,width+delta.x);else width=right-x;
   if(handle.includes("s"))height=Math.max(minimum,height+delta.y);else height=bottom-y;
   if(keepSquare){
-    const size=Math.max(minimum,Math.max(width,height));
+    // Take the size from the axis actually being dragged. Using the larger of the
+    // two dimensions would floor the result at the untouched axis, which makes
+    // single-axis handles unable to shrink a circle at all.
+    const horizontal=handle.includes("e")||handle.includes("w");
+    const vertical=handle.includes("n")||handle.includes("s");
+    const dragged=horizontal&&vertical?(Math.abs(delta.x)>=Math.abs(delta.y)?width:height):horizontal?width:height;
+    const size=Math.max(minimum,dragged);
     if(handle.includes("w"))x=right-size;
     if(handle.includes("n"))y=bottom-size;
     width=height=size;

@@ -100,6 +100,10 @@ export class Autosave{
   async clear(){
     clearTimeout(this.timer);this.timer=0;this.pending=null;
     if(!this.backend)return;
-    try{await this.backend.remove()}catch{/* nothing recoverable to report */}
+    // Join the write chain. Removing concurrently lets an in-flight put land
+    // afterwards and resurrect the record the user just discarded.
+    this.chain=this.chain.then(()=>this.backend.remove()).catch(()=>{});
+    await this.chain;
+    this.writtenRevision=-1;
   }
 }
