@@ -1,121 +1,122 @@
 ![DrawingBoard logo](img/logo.svg)
 
+# DrawingBoard
+
+**Turn rough sketches into editable diagrams, using a mouse or experimental hand gestures.**
+
+A browser-based diagram editor built with vanilla JavaScript, SVG and Canvas. Draw shapes and connectors, refine a freehand sketch, and export the result without an account or build step.
+
 [![Tests](https://github.com/Coins99/DrawingBoard/actions/workflows/test.yml/badge.svg)](https://github.com/Coins99/DrawingBoard/actions/workflows/test.yml)
-[![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-blue)](scripts/serve.mjs)
 
-`DrawingBoard` is the easiest way to turn a rough sketch into an editable diagram.
+[Quick start](#quick-start) · [Two-minute tour](#two-minute-tour) · [Architecture](docs/architecture.md) · [Recognition evaluation](docs/recognition-evaluation.md)
 
-![Demo](img/demo.png)
+![DrawingBoard editor with an example diagram](img/demo.png)
 
-Runs in any current browser with no build step. *Gesture input has not been verified against real camera hardware yet, so no frame-rate or latency figure is claimed. Mouse editing is fully tested.*
+## Highlights
 
-**Usage**
----
+- **Editable diagrams:** rectangles, circles, diamonds, freehand strokes and connectors with labels.
+- **Sketch recognition:** ranked shape suggestions for supported freehand strokes.
+- **Precise editing:** resize, duplicate, nudge, snap to grid, use alignment guides and undo/redo changes.
+- **Portable files:** save and reopen validated JSON; export SVG or PNG at 1× or 2×.
+- **Optional camera input:** explicit camera activation, calibration and a gesture state machine.
+- **Local recovery:** IndexedDB autosave with a localStorage fallback.
 
+Mouse editing has automated browser coverage. Gesture input is tested with replayed landmarks; real-camera acceptance remains open.
+
+## Quick start
+
+You need **Node.js 20.11 or newer**.
+
+```sh
+git clone https://github.com/Coins99/DrawingBoard.git
+cd DrawingBoard
+npm start
 ```
-Usage: setup.cmd [OPTIONS]        (Windows)
-       ./setup.sh [OPTIONS]       (macOS and Linux)
 
-  Serve DrawingBoard and open it in your browser.
-  Developed by Junran Zhou -> (Github: Coins99)
+No npm installation is needed to run the editor. The server opens the browser and prints its URL; the default port is **4173**. If that port is busy, it tries the next few.
 
+| Option | Command |
+| --- | --- |
+| Windows setup helper | `.\setup.cmd` |
+| macOS / Linux setup helper | `./setup.sh` |
+| Choose a port | `npm start -- --port 4174` |
+| Keep browser opening manual | `npm start -- --no-open` |
+| PowerShell blocks npm | Use `npm.cmd` in place of `npm` |
 
-Options:
-  --dev          Also install the development dependencies for the test suites.
-  --port PORT    Serve on PORT instead of 4173.
-  --no-open      Start the server without opening a browser.
-  --help, -h     Show this message and exit.
+The setup helpers check for Node.js and offer installation if it is missing. Add `--dev` to a helper to install test dependencies.
+
+For mouse editing without a local server, open `DrawingBoard/index.html` from disk. Camera input requires localhost or HTTPS and browser permission. MediaPipe model assets load from a CDN; mouse editing remains usable when the model is unavailable.
+
+## Two-minute tour
+
+1. Choose **Rectangle** (`R`) and drag to create a node. Add a second node with **Circle** (`O`) or **Diamond** (`D`).
+2. Choose **Connector** (`C`) and connect the nodes.
+3. Switch to **Select** (`V`), move a shape and try resizing it. Toggle grid snapping or alignment guides.
+4. Choose **Freehand** (`P`) to sketch a supported shape and review the recognition suggestion.
+5. Try undo/redo, then save JSON to keep an editable copy. Export SVG or PNG for sharing.
+
+| Action | Shortcut |
+| --- | --- |
+| Select / Freehand | `V` / `P` |
+| Rectangle / Circle / Diamond / Connector | `R` / `O` / `D` / `C` |
+| Undo / Redo | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` |
+| Duplicate / Delete | `Ctrl/Cmd+D` / `Delete` |
+| Nudge / Larger nudge | Arrow keys / `Shift` + arrow keys |
+| Pan / Zoom | Hold `Space` or middle button / scroll |
+
+### Try gesture input
+
+Enable the camera, run **Calibrate**, and use **Set corner** to define two opposite corners of your reachable area. Arm gesture drawing: touch thumb to pinky to ready the pen, move the index fingertip to draw, then touch again to lift. In Select, dwell highlights an object and a pinch drags it.
+
+Disabling the camera releases the device. Calibration and stability settings help tune input, but hardware behavior is still unverified. See [the manual camera checklist](docs/manual-camera-checklist.md) to evaluate your setup.
+
+## Engineering
+
+Accepted objects render as **SVG** so they remain selectable and exportable. Draft strokes and the hand cursor use a **Canvas** overlay. Pointer and gesture input share the same editing lifecycle and command layer.
+
+The versioned document model validates mutations and imports before committing them. Invalid imports leave the current diagram intact; labels render as text. The test suite covers geometry, document history, recognition, gesture timing, persistence and editor behavior.
+
+| Path | Responsibility |
+| --- | --- |
+| `DrawingBoard/app.js` | Compose the editor and input workflows |
+| `DrawingBoard/src/document.js`, `commands.js` | Document model, validation and transactions |
+| `DrawingBoard/src/geometry.js`, `render.js` | Geometry, hit testing, routing and SVG |
+| `DrawingBoard/src/recognition.js`, `arrow.js` | Shape candidates and two-stroke arrows |
+| `DrawingBoard/src/gestures.js`, `camera.js` | Gesture state and camera lifecycle |
+| `tests/unit/`, `tests/e2e/` | Unit checks and browser regression scenarios |
+
+Read [the architecture guide](docs/architecture.md) for module details and the JSON format.
+
+## Development and verification
+
+```sh
+npm ci
+npx playwright install chromium
+npm test
+npm run test:e2e
+npm run evaluate
 ```
 
-Running the editor installs nothing. The setup script checks for Node.js, offers to install it if it is missing, and serves the page from the standard library. `--dev` is only needed to run the tests.
+Development dependencies are needed for browser tests and screenshot generation. Unit tests and the synthetic recognition evaluation use Node's built-in APIs.
 
-**Installation Options**
----
+Browser tests replay landmark fixtures and block the MediaPipe CDN. They check behavior when the hand model is unavailable and make gesture sequences repeatable. These checks do not measure real-hand accuracy or camera performance.
 
-1. Run the setup script. This is the whole installation.
-    + `$ git clone https://github.com/Coins99/DrawingBoard.git`
-    + `$ cd DrawingBoard`
-    + `$ .\setup.cmd` on Windows, or double-click `setup.cmd` in Explorer
-    + `$ ./setup.sh` on macOS and Linux
+For visual changes, regenerate the demo with `node scripts/screenshot.mjs`. See [the contributor guide](CONTRIBUTING.md) for pull request and bug report guidance.
 
-2. Already have [Node.js](https://nodejs.org/en/download) 20.11 or newer?
-    + `$ npm start`
+## Status and limits
 
-3. No install at all, for mouse editing only.
-    + Open `DrawingBoard/index.html` from disk.
-    + Gesture input will not work: browsers block camera access on `file://`.
+- Real-camera frame rate, latency and false-activation measurements remain unperformed.
+- Recognition evaluation uses synthetic fixtures from zero participants. It is a regression baseline; see [the evaluation method and results](docs/recognition-evaluation.md).
+- Recognition supports circles, rectangles, diamonds and one arrow vocabulary. Other shapes remain freehand; near-45° rectangles may be offered as diamonds.
+- Connector waypoints cannot be edited manually, and orthogonal routing does not avoid obstacles.
+- Gesture selection works on one object at a time; labels use typed input.
+- Autosave is scoped to the browser and origin. Use **Save JSON** for a portable backup.
+- PNG export is limited to 16 million pixels and 8,192 pixels per side; larger diagrams export at a reduced scale.
 
-**Configuration Options**
----
+## Acknowledgements
 
-1. Tools
+Developed by [Junran Zhou (Coins99)](https://github.com/Coins99).
 
-    + Select, Freehand, Rectangle, Circle, Diamond, Connector
-        - Keyboard shortcuts `V` `P` `R` `O` `D` `C`. Freehand strokes are offered as shapes; everything else draws directly.
-    + Undo, Redo, Duplicate, Delete
-        - `Ctrl`/`Cmd` + `Z`, `Shift` + `Ctrl`/`Cmd` + `Z`, `Ctrl`/`Cmd` + `D`, `Delete`.
-    + Arrow keys nudge by 1 unit, `Shift` + arrows by 10
-        - A run of nudges collapses into a single undo step.
-
-2. View
-
-    + Snap to grid?
-        - Quantizes drags and resizes to a 10-unit grid.
-    + Alignment guides?
-        - Snaps a dragged shape to the edges and centres of its neighbours, and draws the line it matched.
-    + Zoom and pan
-        - Scroll to zoom about the pointer. Hold `Space` or use the middle button to pan. Neither changes stored geometry.
-
-3. Export options
-
-    + PNG scale, 1x or 2x
-        - Output is capped at 16 million pixels and 8,192 pixels per side. Larger diagrams export at a reduced scale and the status line says so.
-    + Transparent PNG background?
-        - Off gives a white background. SVG export is always transparent.
-    + Save JSON and Open
-        - The versioned document format. Imports are validated, and a rejected file leaves the open diagram alone.
-
-4. Gesture control
-
-    + Enable camera
-        - Nothing starts on its own, and disabling it releases the device.
-    + Calibrate
-        - Measures your own finger distances over four one-second prompts. If the touching and released distances overlap, the defaults are kept and the reason is shown.
-    + Set corner
-        - Records two opposite corners of the area you can comfortably reach. Leaving that area ends the stroke instead of sliding along the border.
-    + Arm gesture drawing
-        - Touch thumb to pinky once to ready the pen, move your index fingertip to draw, touch again to lift. In Select, dwell highlights and a pinch drags.
-    + Stability
-        - Trades pointer latency against jitter.
-
-**Known Limits**
----
-
-+ No run has happened against real camera hardware. There is no frame-rate, latency or false-activation figure, and [the manual camera checklist](docs/manual-camera-checklist.md) is still unperformed.
-+ Recognition is measured only on synthetic fixtures from zero participants. That is a regression baseline, not a statement about real hands. See [the recognition evaluation](docs/recognition-evaluation.md).
-+ Recognition covers circles, rectangles, diamonds and one arrow vocabulary. Triangles, other polygons and other arrow styles stay freehand; the connector tool is the fallback.
-+ A rectangle rotated near 45 degrees is offered as a diamond, because its corners genuinely sit at the bounding-box extremes.
-+ Connector waypoints cannot be edited by hand, and orthogonal routing does not avoid obstacles.
-+ Gesture selection acts on one object at a time. Labels are always typed.
-+ Local recovery is per browser and per origin. It is a crash net, not a backup: use **Save JSON** for anything you care about.
-
-**How to Contribute**
----
-
-1. Fork and clone the repository, then run `./setup.sh --dev` (or `.\setup.cmd --dev`) to install the test dependencies.
-
-2. Make your change and keep the suites green: `npm test`, `npm run test:e2e` and `npm run evaluate`. A bug fix should come with the test that failed before it.
-
-3. Open a pull request. If your change affects what the editor looks like, regenerate the demo image with `node scripts/screenshot.mjs`. [The architecture notes](docs/architecture.md) describe the module layout and the document format.
-
-**Acknowledgements**
----
-
-+ [MediaPipe Hands](https://github.com/google-ai-edge/mediapipe) for the hand landmark model, pinned to a tested version and loaded behind an adapter.
-+ [Playwright](https://playwright.dev) for the browser tests, which replay landmark fixtures so gesture behaviour is checked without a camera.
-+ [stronghold](https://github.com/alichtman/stronghold) by Aaron Lichtman, whose README this one is modelled on.
-
-**Support**
----
-
-DrawingBoard takes no donations. If it was useful, star the repository, or help with the one thing automated tests cannot do: run [the manual camera checklist](docs/manual-camera-checklist.md) on your own hardware and open an issue with the results and your device, browser, lighting and distance. Recorded strokes from a real hand are worth more here than any code contribution.
+- [MediaPipe Hands](https://github.com/google-ai-edge/mediapipe) provides the pinned hand landmark model.
+- [Playwright](https://playwright.dev) supports browser tests and landmark replay.
+- The earlier README drew on [stronghold](https://github.com/alichtman/stronghold) by Aaron Lichtman.
